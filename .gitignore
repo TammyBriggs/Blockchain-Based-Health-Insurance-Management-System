@@ -1,0 +1,28 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.o
+*.out
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Compiled Static libraries
+*.a
+*.lib
+
+# Executables
+health_chain
+*.exe
+
+# Private Keys and Certificates (CRITICAL)
+*.pem
+*.key
+
+# Database and Persistence files
+*.bin
+*.dat
+*.db
