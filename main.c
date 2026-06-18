@@ -1,56 +1,53 @@
 #include <stdio.h>
 #include <string.h>
-#include <time.h>
 #include "core.h"
 #include "crypto.h"
+#include "state.h"
 
 int main() {
-    printf("--- Testing Batch 2: Cryptography & ECDSA ---\n\n");
+    printf("--- Testing Batch 3: Dual-Model State (UTXO & Account) ---\n\n");
+    state_init();
 
-    // 1. Generate Keypair
-    EC_KEY *alice_wallet = generate_wallet_keypair();
-    char alice_address[130];
-    get_wallet_address(alice_wallet, alice_address);
-    printf("Alice Wallet Address (Pub Key):\n%s\n\n", alice_address);
+    char alice_addr[] = "ALICE_PUB_KEY_HEX";
+    char bob_addr[] = "BOB_PUB_KEY_HEX";
 
-    // 2. Create a Mock Transaction
-    Transaction tx;
-    memset(&tx, 0, sizeof(Transaction));
-    strcpy(tx.transaction_id, "TX_001");
-    strcpy(tx.sender_address, alice_address);
-    strcpy(tx.receiver_address, "RECEIVER_WALLET_HEX_HERE");
-    tx.amount = 500;
-    tx.transaction_type = TX_PREMIUM_PAYMENT;
-    tx.timestamp = time(NULL);
-    tx.sender_nonce = 0; // Account nonce snapshot
+    // --- 1. Test Account Model ---
+    printf("[Account Model] Funding Alice with 1000 AHT...\n");
+    update_account_balance(alice_addr, 1000, true);
+    
+    Account *alice = get_or_create_account(alice_addr);
+    printf("Alice Balance: %lu, Nonce: %lu\n", alice->balance, alice->nonce);
 
-    // 3. Sign Transaction
-    if (sign_transaction(&tx, alice_wallet)) {
-        printf("Transaction signed successfully. Signature Length: %zu bytes\n", tx.signature_length);
-    } else {
-        printf("Signing failed!\n");
-        return 1;
+    printf("[Account Model] Alice sends 300 AHT to Bob...\n");
+    if (update_account_balance(alice_addr, 300, false)) {
+        update_account_balance(bob_addr, 300, true);
+        increment_account_nonce(alice_addr);
+        printf("Transfer Success. Alice's new nonce: %lu\n", get_or_create_account(alice_addr)->nonce);
     }
 
-    // 4. Verify Signature (Normal Case)
-    if (verify_signature(&tx)) {
-        printf("Verification: SUCCESS (Signature is valid)\n");
+    printf("[Account Model] Validating next transaction nonce (Expected 1)...\n");
+    if (validate_account_nonce(alice_addr, 1)) {
+        printf("Nonce validation: SUCCESS\n\n");
     } else {
-        printf("Verification: FAILED\n");
+        printf("Nonce validation: FAILED\n\n");
     }
 
-    // 5. Test Tamper Detection
-    printf("\nSimulating network tampering (changing amount from 500 to 5000)...\n");
-    tx.amount = 5000; 
+    // --- 2. Test UTXO Model ---
+    char tx_utxo_id[] = "TX_PREMIUM_001";
+    printf("[UTXO Model] Creating UTXO for Bob (Amount: 500)...\n");
+    add_utxo(tx_utxo_id, bob_addr, 500);
 
-    if (verify_signature(&tx)) {
-        printf("Verification: SUCCESS (Warning: Tampering went undetected!)\n");
-    } else {
-        printf("Verification: FAILED (Tampering detected successfully!)\n");
+    printf("[UTXO Model] Bob attempts to spend UTXO %s...\n", tx_utxo_id);
+    if (spend_utxo(tx_utxo_id, bob_addr)) {
+        printf("Spend: SUCCESS\n");
     }
 
-    // Cleanup
-    EC_KEY_free(alice_wallet);
+    printf("[UTXO Model] Bob attempts to double-spend UTXO %s...\n", tx_utxo_id);
+    if (spend_utxo(tx_utxo_id, bob_addr)) {
+        printf("Double-Spend: SUCCESS (WARNING: BUG)\n");
+    } else {
+        printf("Double-Spend: BLOCKED (Protection working correctly)\n");
+    }
 
     return 0;
 }
