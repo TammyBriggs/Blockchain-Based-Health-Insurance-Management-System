@@ -90,7 +90,7 @@ bool verify_chain() {
             unsigned char recomputed_prev_hash[HASH_SIZE];
             hash_block(&blockchain[i - 1], recomputed_prev_hash);
             if (memcmp(b->previous_hash, recomputed_prev_hash, HASH_SIZE) != 0) {
-                printf("Verification Failed: Block %u linkage broken.\n", b->block_id);
+                printf("Verification Failed: Block %lu linkage broken.\n", b->block_id);
                 return false;
             }
         }
@@ -99,7 +99,7 @@ bool verify_chain() {
         unsigned char current_hash[HASH_SIZE];
         hash_block(b, current_hash);
         if (!check_difficulty(current_hash, b->difficulty)) {
-            printf("Verification Failed: Block %u PoW invalid.\n", b->block_id);
+            printf("Verification Failed: Block %lu PoW invalid.\n", b->block_id);
             return false;
         }
 
@@ -107,7 +107,7 @@ bool verify_chain() {
         unsigned char recomputed_merkle[HASH_SIZE];
         compute_merkle_root(b->transactions, b->transaction_count, recomputed_merkle);
         if (memcmp(b->merkle_root, recomputed_merkle, HASH_SIZE) != 0) {
-            printf("Verification Failed: Block %u Merkle Root mismatch (Transaction altered!).\n", b->block_id);
+            printf("Verification Failed: Block %lu Merkle Root mismatch (Transaction altered!).\n", b->block_id);
             return false;
         }
 
@@ -115,7 +115,7 @@ bool verify_chain() {
         for (uint32_t j = 0; j < b->transaction_count; j++) {
             if (strcmp(b->transactions[j].sender_address, "SYSTEM_COINBASE") != 0) {
                 if (!verify_signature(&b->transactions[j])) {
-                    printf("Verification Failed: Block %u contains transaction with invalid signature.\n", b->block_id);
+                    printf("Verification Failed: Block %lu contains transaction with invalid signature.\n", b->block_id);
                     return false;
                 }
             }
