@@ -6,50 +6,70 @@
 #include "state.h"
 #include "mempool.h"
 #include "chain.h"
+#include "insurance.h"
 
 int main() {
-    printf("--- Testing Batch 5: Pool Mining & Fixes ---\n\n");
+    printf("--- Testing Batch 6: Policies & Fraud Detection ---\n\n");
     chain_init();
     state_init();
     mempool_init();
+    insurance_init();
 
-    char miner1[] = "MINER_1_ADDRESS";
-    char miner2[] = "MINER_2_ADDRESS";
-    char miner3[] = "MINER_3_ADDRESS";
+    EC_KEY *alice_wallet = generate_wallet_keypair();
+    char alice_addr[130];
+    get_wallet_address(alice_wallet, alice_addr);
+    char provider_addr[] = "HOSPITAL_PUB_KEY";
 
-    printf("Starting Mempool Count: %u\n", mempool_count);
-
-    // 1. Test Solo Mining
-    if (mine_solo(miner1)) {
-        printf("Solo Mining Successful! Miner 1 Balance: %lu AHT\n\n", get_or_create_account(miner1)->balance);
-    }
-
-    // 2. Submit a dummy transaction for the next block
-    Transaction dummy_tx;
-    memset(&dummy_tx, 0, sizeof(Transaction));
-    strcpy(dummy_tx.transaction_id, "TX_USER_POOL_TEST");
-    strcpy(dummy_tx.sender_address, "SOME_USER_ADDRESS");
-    strcpy(dummy_tx.receiver_address, "PROVIDER_ADDRESS");
-    dummy_tx.amount = 100;
-    dummy_tx.timestamp = time(NULL);
-    add_to_mempool(&dummy_tx, 15, STATUS_PENDING);
-
-    // 3. Test Pool Mining (Simulating hash contributions)
-    printf("Simulating Pool Mining with 3 Miners...\n");
-    printf("Miner 1 contributed 5000 hashes\n");
-    printf("Miner 2 contributed 3000 hashes\n");
-    printf("Miner 3 contributed 2000 hashes\n");
+    // 1. Test Policy Enrollment & Expiry Rejection
+    printf("[Test 1] Enrolling Alice in Gold Plan...\n");
+    enroll_policy("POL_123", alice_addr, "ALU_GOLD");
     
-    const char *pool_miners[] = {miner1, miner2, miner3};
-    uint32_t contributions[] = {5000, 3000, 2000}; // Total 10,000 hashes. Block reward is 50.
+    // Force expire the policy for testing
+    Policy *p = get_policy("POL_123");
+    p->expiry_date = time(NULL) - 86400; // Expired yesterday
 
-    if (mine_pool(pool_miners, contributions, 3)) {
-        printf("\nPool Mining Successful!\n");
-        printf("Miner 1 Total Balance: %lu AHT (Expected: 50 from solo + 25 from pool = 75)\n", get_or_create_account(miner1)->balance);
-        printf("Miner 2 Total Balance: %lu AHT (Expected: 15)\n", get_or_create_account(miner2)->balance);
-        printf("Miner 3 Total Balance: %lu AHT (Expected: 10)\n", get_or_create_account(miner3)->balance);
-        printf("Remaining Mempool Count: %u\n", mempool_count);
+    Transaction claim_tx;
+    memset(&claim_tx, 0, sizeof(Transaction));
+    strcpy(claim_tx.transaction_id, "TX_CLAIM_001");
+    strcpy(claim_tx.sender_address, alice_addr);
+    strcpy(claim_tx.receiver_address, provider_addr);
+    claim_tx.amount = 200;
+    claim_tx.transaction_type = TX_CLAIM_SUBMISSION;
+    claim_tx.timestamp = time(NULL);
+
+    printf("Submitting claim against expired policy...\n");
+    submit_claim(&claim_tx, 10, alice_wallet, "POL_123");
+
+    // Renew and try again
+    printf("\nRenewing Policy...\n");
+    renew_policy("POL_123");
+    printf("Submitting claim against renewed policy...\n");
+    if (submit_claim(&claim_tx, 10, alice_wallet, "POL_123")) {
+        printf("Claim successfully added to mempool!\n");
     }
 
+    // 2. Test Duplicate Fraud Detection
+    printf("\n[Test 2] Submitting EXACT same transaction ID to trigger Duplicate Fraud...\n");
+    submit_claim(&claim_tx, 10, alice_wallet, "POL_123");
+
+    // 3. Test High Frequency Fraud Detection
+    printf("\n[Test 3] Spamming claims to trigger High Frequency Fraud (>3 in 24h)...\n");
+    for (int i = 2; i <= 4; i++) {
+        Transaction spam_tx;
+        memset(&spam_tx, 0, sizeof(Transaction));
+        snprintf(spam_tx.transaction_id, 64, "TX_CLAIM_00%d", i);
+        strcpy(spam_tx.sender_address, alice_addr);
+        strcpy(spam_tx.receiver_address, provider_addr);
+        spam_tx.amount = 50;
+        spam_tx.transaction_type = TX_CLAIM_SUBMISSION;
+        spam_tx.timestamp = time(NULL);
+        submit_claim(&spam_tx, 5, alice_wallet, "POL_123");
+    }
+
+    // Verify Suspicious Status
+    printf("\nMempool Verification: Checking for Suspicious tags...\n");
+    view_mempool();
+
+    EC_KEY_free(alice_wallet);
     return 0;
 }
