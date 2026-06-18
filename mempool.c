@@ -64,6 +64,8 @@ bool submit_premium_payment(const char *sender, const char *insurance_pool, cons
     uint64_t reinsurance_amount = amount * 0.05; // 5% split
     uint64_t primary_amount = amount - reinsurance_amount;
 
+    Account *sender_acc = get_or_create_account(sender);
+
     // Setup Primary Premium TX
     snprintf(primary_tx.transaction_id, 64, "TX_PREM_%ld", time(NULL));
     strcpy(primary_tx.sender_address, sender);
@@ -71,9 +73,13 @@ bool submit_premium_payment(const char *sender, const char *insurance_pool, cons
     primary_tx.amount = primary_amount;
     primary_tx.transaction_type = TX_PREMIUM_PAYMENT;
     primary_tx.timestamp = time(NULL);
-    
-    Account *sender_acc = get_or_create_account(sender);
     primary_tx.sender_nonce = sender_acc->nonce;
+
+    // --- REPLAY PROTECTION CHECK ---
+    if (!validate_account_nonce(sender, primary_tx.sender_nonce)) {
+        printf("Transaction Rejected: Invalid nonce (Replay Attack Prevention).\n");
+        return false;
+    }
 
     // Setup Reinsurance Contribution TX
     snprintf(reins_tx.transaction_id, 64, "TX_REINS_%ld", time(NULL) + 1);
@@ -83,18 +89,6 @@ bool submit_premium_payment(const char *sender, const char *insurance_pool, cons
     reins_tx.transaction_type = TX_REINSURANCE_CONTRIBUTION;
     reins_tx.timestamp = time(NULL) + 1; // Slightly offset timestamp
     reins_tx.sender_nonce = sender_acc->nonce; // Uses same nonce snapshot conceptually before block confirmation
-
-    // REPLAY PROTECTION: Validate nonce before signing
-    if (!validate_account_nonce(tx->sender_address, tx->sender_nonce)) {
-        printf("Transaction Rejected: Invalid nonce (Replay Attack Prevention).\n");
-        return false;
-    }
-
-    if (!sign_transaction(tx, priv_key)) return false;
-
-    MempoolStatus final_status = run_fraud_heuristics(tx) ? STATUS_SUSPICIOUS : STATUS_PENDING;
-    return add_to_mempool(tx, fee, final_status);
-}
 
     // Sign both
     if (!sign_transaction(&primary_tx, priv_key) || !sign_transaction(&reins_tx, priv_key)) {
@@ -114,7 +108,6 @@ uint32_t get_pending_transactions(Transaction *out_txs, uint32_t max_count) {
     for (uint32_t i = 0; i < mempool_count && count < max_count; i++) {
         if (mempool[i].status == STATUS_PENDING) {
             // Find the full transaction data (In a real DB, we'd look it up. Here we reconstruct for simplicity based on the struct)
-            // For this project, we'll map the mempool entry back into the Tx array format.
             strcpy(out_txs[count].transaction_id, mempool[i].transaction_id);
             strcpy(out_txs[count].sender_address, mempool[i].sender);
             strcpy(out_txs[count].receiver_address, mempool[i].receiver);
