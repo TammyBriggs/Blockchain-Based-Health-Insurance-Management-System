@@ -95,3 +95,38 @@ bool submit_premium_payment(const char *sender, const char *insurance_pool, cons
 
     return true;
 }
+
+// Extracts the highest priority PENDING transactions for the miner
+uint32_t get_pending_transactions(Transaction *out_txs, uint32_t max_count) {
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < mempool_count && count < max_count; i++) {
+        if (mempool[i].status == STATUS_PENDING) {
+            // Find the full transaction data (In a real DB, we'd look it up. Here we reconstruct for simplicity based on the struct)
+            // For this project, we'll map the mempool entry back into the Tx array format.
+            strcpy(out_txs[count].transaction_id, mempool[i].transaction_id);
+            strcpy(out_txs[count].sender_address, mempool[i].sender);
+            strcpy(out_txs[count].receiver_address, mempool[i].receiver);
+            out_txs[count].amount = mempool[i].amount;
+            out_txs[count].transaction_type = mempool[i].transaction_type;
+            out_txs[count].timestamp = mempool[i].timestamp;
+            count++;
+        }
+    }
+    return count;
+}
+
+// Removes mined transactions from the mempool
+void remove_confirmed_transactions(const Transaction *confirmed_txs, uint32_t count) {
+    for (uint32_t i = 0; i < count; i++) {
+        for (uint32_t j = 0; j < mempool_count; j++) {
+            if (strcmp(mempool[j].transaction_id, confirmed_txs[i].transaction_id) == 0) {
+                // Shift array left to remove the item
+                for (uint32_t k = j; k < mempool_count - 1; k++) {
+                    mempool[k] = mempool[k + 1];
+                }
+                mempool_count--;
+                break; // Move to next confirmed tx
+            }
+        }
+    }
+}

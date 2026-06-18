@@ -79,4 +79,12 @@ typedef struct {
     Transaction transactions[MAX_TRANSACTIONS_PER_BLOCK]; 
 } Block;
 
+// Blockchain Global State Metadata
+typedef struct {
+    uint32_t current_difficulty;
+    uint64_t block_reward;
+    uint32_t total_blocks;
+    uint32_t last_retarget_block;
+} ChainState;
+
 #endif // CORE_H
