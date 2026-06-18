@@ -3,51 +3,45 @@
 #include "core.h"
 #include "crypto.h"
 #include "state.h"
+#include "mempool.h"
 
 int main() {
-    printf("--- Testing Batch 3: Dual-Model State (UTXO & Account) ---\n\n");
+    printf("--- Testing Batch 4: Mempool & Reinsurance Split ---\n\n");
     state_init();
+    mempool_init();
 
-    char alice_addr[] = "ALICE_PUB_KEY_HEX";
-    char bob_addr[] = "BOB_PUB_KEY_HEX";
-
-    // --- 1. Test Account Model ---
-    printf("[Account Model] Funding Alice with 1000 AHT...\n");
-    update_account_balance(alice_addr, 1000, true);
+    EC_KEY *alice_wallet = generate_wallet_keypair();
+    char alice_addr[130];
+    get_wallet_address(alice_wallet, alice_addr);
     
-    Account *alice = get_or_create_account(alice_addr);
-    printf("Alice Balance: %lu, Nonce: %lu\n", alice->balance, alice->nonce);
+    char insurance_pool[] = "INSURANCE_POOL_HEX";
+    char reinsurance_pool[] = "REINSURANCE_POOL_HEX";
 
-    printf("[Account Model] Alice sends 300 AHT to Bob...\n");
-    if (update_account_balance(alice_addr, 300, false)) {
-        update_account_balance(bob_addr, 300, true);
-        increment_account_nonce(alice_addr);
-        printf("Transfer Success. Alice's new nonce: %lu\n", get_or_create_account(alice_addr)->nonce);
+    // 1. Give Alice some starting funds
+    update_account_balance(alice_addr, 5000, true);
+
+    // 2. Submit a low priority dummy transaction first
+    Transaction low_tx;
+    memset(&low_tx, 0, sizeof(Transaction));
+    strcpy(low_tx.transaction_id, "TX_LOW_PRIORITY");
+    strcpy(low_tx.sender_address, alice_addr);
+    strcpy(low_tx.receiver_address, "SOME_PROVIDER");
+    low_tx.amount = 100;
+    low_tx.transaction_type = TX_SERVICE_REQUEST;
+    low_tx.timestamp = time(NULL) - 100; // Older timestamp
+    add_to_mempool(&low_tx, 10, STATUS_PENDING); // Fee is 10
+
+    // 3. Submit Premium Payment (Triggers the split logic)
+    printf("Alice submits a Premium Payment of 1000 AHT with fee 50...\n");
+    if (submit_premium_payment(alice_addr, insurance_pool, reinsurance_pool, 1000, 50, alice_wallet)) {
+        printf("Premium payment processed into mempool.\n");
     }
 
-    printf("[Account Model] Validating next transaction nonce (Expected 1)...\n");
-    if (validate_account_nonce(alice_addr, 1)) {
-        printf("Nonce validation: SUCCESS\n\n");
-    } else {
-        printf("Nonce validation: FAILED\n\n");
-    }
+    // 4. View Mempool to verify sorting
+    // Expected: Premium TX and Reinsurance TX should be at the top (Fee 50), 
+    // Low priority TX at the bottom (Fee 10)
+    view_mempool();
 
-    // --- 2. Test UTXO Model ---
-    char tx_utxo_id[] = "TX_PREMIUM_001";
-    printf("[UTXO Model] Creating UTXO for Bob (Amount: 500)...\n");
-    add_utxo(tx_utxo_id, bob_addr, 500);
-
-    printf("[UTXO Model] Bob attempts to spend UTXO %s...\n", tx_utxo_id);
-    if (spend_utxo(tx_utxo_id, bob_addr)) {
-        printf("Spend: SUCCESS\n");
-    }
-
-    printf("[UTXO Model] Bob attempts to double-spend UTXO %s...\n", tx_utxo_id);
-    if (spend_utxo(tx_utxo_id, bob_addr)) {
-        printf("Double-Spend: SUCCESS (WARNING: BUG)\n");
-    } else {
-        printf("Double-Spend: BLOCKED (Protection working correctly)\n");
-    }
-
+    EC_KEY_free(alice_wallet);
     return 0;
 }

@@ -60,6 +60,7 @@ typedef struct {
     uint64_t amount;
     TransactionType transaction_type;
     uint64_t fee; // Priority value
+    time_t timestamp; // Needed for secondary sorting
     MempoolStatus status;
 } MempoolEntry;
 
