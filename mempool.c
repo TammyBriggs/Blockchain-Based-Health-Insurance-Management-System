@@ -84,6 +84,18 @@ bool submit_premium_payment(const char *sender, const char *insurance_pool, cons
     reins_tx.timestamp = time(NULL) + 1; // Slightly offset timestamp
     reins_tx.sender_nonce = sender_acc->nonce; // Uses same nonce snapshot conceptually before block confirmation
 
+    // REPLAY PROTECTION: Validate nonce before signing
+    if (!validate_account_nonce(tx->sender_address, tx->sender_nonce)) {
+        printf("Transaction Rejected: Invalid nonce (Replay Attack Prevention).\n");
+        return false;
+    }
+
+    if (!sign_transaction(tx, priv_key)) return false;
+
+    MempoolStatus final_status = run_fraud_heuristics(tx) ? STATUS_SUSPICIOUS : STATUS_PENDING;
+    return add_to_mempool(tx, fee, final_status);
+}
+
     // Sign both
     if (!sign_transaction(&primary_tx, priv_key) || !sign_transaction(&reins_tx, priv_key)) {
         return false;

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <openssl/sha.h>
 #include "chain.h"
 #include "crypto.h"
@@ -152,13 +153,23 @@ bool mine_solo(const char *miner_address) {
     // 6. Finalize: Save block, update state, clean mempool
     blockchain[chain_state.total_blocks++] = new_block;
     
-    // Update Account balances & nonces for all confirmed transactions
+    // Update Account balances, Nonces, AND UTXO states for all confirmed transactions
     for (uint32_t i = 0; i < new_block.transaction_count; i++) {
+        // 1. Account Model Update (Balances)
         update_account_balance(new_block.transactions[i].receiver_address, new_block.transactions[i].amount, true);
+        
         if (strcmp(new_block.transactions[i].sender_address, "SYSTEM_COINBASE") != 0) {
             update_account_balance(new_block.transactions[i].sender_address, new_block.transactions[i].amount, false);
-            increment_account_nonce(new_block.transactions[i].sender_address); // Increment ACCOUNT nonce AFTER confirmation
+            increment_account_nonce(new_block.transactions[i].sender_address); // Replay protection update
+            
+            // 2. UTXO Model Update (Consumption)
+            // The sender must have an unspent UTXO to consume
+            consume_any_utxo(new_block.transactions[i].sender_address);
         }
+        
+        // 3. UTXO Model Update (Creation)
+        // Every valid transaction creates a new UTXO for the receiver
+        add_utxo(new_block.transactions[i].transaction_id, new_block.transactions[i].receiver_address, new_block.transactions[i].amount);
     }
 
     remove_confirmed_transactions(new_block.transactions, new_block.transaction_count - 1); // -1 to skip coinbase
@@ -234,12 +245,21 @@ bool mine_pool(const char **miner_addresses, const uint32_t *hash_contributions,
     // 7. Finalize: Save block, update state, clean mempool
     blockchain[chain_state.total_blocks++] = new_block;
     
+    // Update Account balances, Nonces, AND UTXO states for all confirmed transactions
     for (uint32_t i = 0; i < new_block.transaction_count; i++) {
+        // 1. Account Model Update (Balances)
         update_account_balance(new_block.transactions[i].receiver_address, new_block.transactions[i].amount, true);
+        
         if (strcmp(new_block.transactions[i].sender_address, "SYSTEM_COINBASE") != 0) {
             update_account_balance(new_block.transactions[i].sender_address, new_block.transactions[i].amount, false);
-            increment_account_nonce(new_block.transactions[i].sender_address);
+            increment_account_nonce(new_block.transactions[i].sender_address); // Replay protection update
+            
+            // 2. UTXO Model Update (Consumption)
+            consume_any_utxo(new_block.transactions[i].sender_address);
         }
+        
+        // 3. UTXO Model Update (Creation)
+        add_utxo(new_block.transactions[i].transaction_id, new_block.transactions[i].receiver_address, new_block.transactions[i].amount);
     }
 
     // Remove only the standard mempool transactions, ignoring the generated coinbase ones

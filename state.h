@@ -30,6 +30,7 @@ Account* get_or_create_account(const char *address);
 bool update_account_balance(const char *address, uint64_t amount, bool is_addition);
 bool validate_account_nonce(const char *address, uint64_t incoming_nonce);
 void increment_account_nonce(const char *address);
+bool consume_any_utxo(const char *spender_address);
 
 // --- UTXO Model Functions ---
 bool add_utxo(const char *tx_id, const char *receiver, uint64_t amount);

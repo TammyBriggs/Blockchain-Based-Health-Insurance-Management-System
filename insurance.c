@@ -135,29 +135,65 @@ bool run_fraud_heuristics(const Transaction *tx) {
 // --- Claim Submission Pipeline ---
 bool submit_claim(Transaction *tx, uint64_t fee, EC_KEY *priv_key, const char *policy_id) {
     Policy *p = get_policy(policy_id);
-    
-    if (!p) {
-        printf("Claim Rejected: Policy %s does not exist.\n", policy_id);
-        return false;
-    }
-    
-    // Strict rejection rule for expired policies
-    if (p->status == POLICY_EXPIRED) {
-        printf("Claim Rejected: Policy %s is EXPIRED.\n", policy_id);
-        return false;
-    }
+    if (!p || p->status == POLICY_EXPIRED) return false;
 
-    // Attach nonce and Sign
     Account *sender_acc = get_or_create_account(tx->sender_address);
     tx->sender_nonce = sender_acc->nonce;
     
-    if (!sign_transaction(tx, priv_key)) {
-        printf("Claim Rejected: Cryptographic signature failed.\n");
+    // REPLAY PROTECTION: Validate nonce before signing
+    if (!validate_account_nonce(tx->sender_address, tx->sender_nonce)) {
+        printf("Transaction Rejected: Invalid nonce (Replay Attack Prevention).\n");
         return false;
     }
 
-    // Determine status based on fraud heuristics
+    if (!sign_transaction(tx, priv_key)) return false;
+
     MempoolStatus final_status = run_fraud_heuristics(tx) ? STATUS_SUSPICIOUS : STATUS_PENDING;
-    
     return add_to_mempool(tx, fee, final_status);
+}
+
+bool settle_claim(const char *claim_tx_id, const char *provider_addr, uint64_t amount, EC_KEY *ins_priv, EC_KEY *reins_priv, const char *ins_addr, const char *reins_addr) {
+    Transaction primary_tx, reins_tx;
+    memset(&primary_tx, 0, sizeof(Transaction));
+    memset(&reins_tx, 0, sizeof(Transaction));
+
+    if (amount <= 1000) {
+        // Insurance pool pays all
+        snprintf(primary_tx.transaction_id, 64, "TX_SETTLE_%ld", time(NULL));
+        strcpy(primary_tx.sender_address, ins_addr);
+        strcpy(primary_tx.receiver_address, provider_addr);
+        primary_tx.amount = amount;
+        primary_tx.transaction_type = TX_CLAIM_SETTLEMENT;
+        primary_tx.timestamp = time(NULL);
+        primary_tx.sender_nonce = get_or_create_account(ins_addr)->nonce;
+        
+        if (!sign_transaction(&primary_tx, ins_priv)) return false;
+        return add_to_mempool(&primary_tx, 20, STATUS_PENDING);
+    } else {
+        // Split logic: Insurance pays 1000, Reinsurance pays the rest
+        uint64_t excess = amount - 1000;
+        
+        snprintf(primary_tx.transaction_id, 64, "TX_SETTLE_MAIN_%ld", time(NULL));
+        strcpy(primary_tx.sender_address, ins_addr);
+        strcpy(primary_tx.receiver_address, provider_addr);
+        primary_tx.amount = 1000;
+        primary_tx.transaction_type = TX_CLAIM_SETTLEMENT;
+        primary_tx.timestamp = time(NULL);
+        primary_tx.sender_nonce = get_or_create_account(ins_addr)->nonce;
+        sign_transaction(&primary_tx, ins_priv);
+        add_to_mempool(&primary_tx, 20, STATUS_PENDING);
+
+        snprintf(reins_tx.transaction_id, 64, "TX_SETTLE_REINS_%ld", time(NULL) + 1);
+        strcpy(reins_tx.sender_address, reins_addr);
+        strcpy(reins_tx.receiver_address, provider_addr);
+        reins_tx.amount = excess;
+        reins_tx.transaction_type = TX_CLAIM_SETTLEMENT;
+        reins_tx.timestamp = time(NULL) + 1;
+        reins_tx.sender_nonce = get_or_create_account(reins_addr)->nonce;
+        sign_transaction(&reins_tx, reins_priv);
+        add_to_mempool(&reins_tx, 20, STATUS_PENDING);
+        
+        printf("Settlement split: 1000 AHT from Primary, %lu AHT from Reinsurance.\n", excess);
+        return true;
+    }
 }

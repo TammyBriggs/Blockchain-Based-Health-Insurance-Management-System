@@ -98,3 +98,14 @@ bool is_utxo_spent(const char *tx_id) {
     }
     return true; // If not found, treat as spent/invalid for safety
 }
+
+// Consumes the first available unspent UTXO for a sender to satisfy the hybrid model requirement
+bool consume_any_utxo(const char *spender_address) {
+    for (uint32_t i = 0; i < utxo_count; i++) {
+        if (strcmp(utxos[i].receiver_address, spender_address) == 0 && !utxos[i].is_spent) {
+            utxos[i].is_spent = true;
+            return true;
+        }
+    }
+    return false; // No unspent UTXOs found
+}

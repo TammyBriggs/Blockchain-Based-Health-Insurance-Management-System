@@ -40,4 +40,7 @@ bool run_fraud_heuristics(const Transaction *tx);
 // Claim Submission Wrapper
 bool submit_claim(Transaction *tx, uint64_t fee, EC_KEY *priv_key, const char *policy_id);
 
+// Settlement Function Signature
+bool settle_claim(const char *claim_tx_id, const char *provider_addr, uint64_t amount, EC_KEY *ins_priv, EC_KEY *reins_priv, const char *ins_addr, const char *reins_addr);
+
 #endif // INSURANCE_H
