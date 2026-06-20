@@ -70,12 +70,16 @@ int main() {
             args[argc++] = token;
             token = strtok(NULL, " \t");
         }
+        
+        // If empty input, just loop again without pausing
         if (argc == 0) continue; 
+        
         char *cmd = args[0];
 
         // --- System Commands ---
         if (strcmp(cmd, "0") == 0 || strcmp(cmd, "exit") == 0) {
-            save_chain(); break;
+            save_chain(); 
+            break; // Exits the loop entirely
         }
         else if (strcmp(cmd, "1") == 0 || strcmp(cmd, "wallet_balance") == 0) {
             char *addr = (argc > 1) ? args[1] : session_addr;
@@ -123,7 +127,6 @@ int main() {
         }
         else if (strcmp(cmd, "7") == 0 || strcmp(cmd, "preauth_request") == 0) {
             if (argc < 3) { printf("Usage: 7 <member_addr> <est_amount>\n"); continue; }
-            // Simulating provider submitting pre-auth for a member using session wallet as provider
             if (submit_preauth_request(session_addr, args[1], strtoull(args[2], NULL, 10), session_wallet)) {
                 printf("Pre-auth request queued.\n");
             }
@@ -260,6 +263,12 @@ int main() {
         else {
             printf("Invalid command.\n");
         }
+
+        // --- Demo Pause Lock ---
+        // Prevents the menu from instantly reprinting and scrolling the results away.
+        printf("\n[Press Enter to return to menu...]");
+        char pause_buffer[10];
+        fgets(pause_buffer, sizeof(pause_buffer), stdin);
     }
 
     EC_KEY_free(session_wallet);
