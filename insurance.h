@@ -43,4 +43,9 @@ bool submit_claim(Transaction *tx, uint64_t fee, EC_KEY *priv_key, const char *p
 // Settlement Function Signature
 bool settle_claim(const char *claim_tx_id, const char *provider_addr, uint64_t amount, EC_KEY *ins_priv, EC_KEY *reins_priv, const char *ins_addr, const char *reins_addr);
 
+// Administrative Transaction Wrappers
+bool submit_service_request(const char *member_addr, const char *provider_addr, EC_KEY *priv_key);
+bool submit_preauth_request(const char *provider_addr, const char *member_addr, uint64_t est_amount, EC_KEY *priv_key);
+bool process_claim_decision(const char *ins_addr, const char *provider_addr, const char *claim_tx_id, bool is_approved, EC_KEY *priv_key);
+
 #endif // INSURANCE_H

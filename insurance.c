@@ -173,6 +173,7 @@ bool settle_claim(const char *claim_tx_id, const char *provider_addr, uint64_t a
         // Split logic: Insurance pays 1000, Reinsurance pays the rest
         uint64_t excess = amount - 1000;
         
+        // 1. Primary Pool Transaction (Always 1000 AHT)
         snprintf(primary_tx.transaction_id, 64, "TX_SETTLE_MAIN_%ld", time(NULL));
         strcpy(primary_tx.sender_address, ins_addr);
         strcpy(primary_tx.receiver_address, provider_addr);
@@ -183,6 +184,16 @@ bool settle_claim(const char *claim_tx_id, const char *provider_addr, uint64_t a
         sign_transaction(&primary_tx, ins_priv);
         add_to_mempool(&primary_tx, 20, STATUS_PENDING);
 
+        // 2. Reinsurance Pool Balance Check
+        uint64_t reins_balance = get_or_create_account(reins_addr)->balance;
+        MempoolStatus reins_status = STATUS_PENDING;
+        
+        if (excess > reins_balance) {
+            printf("[WARNING] Reinsurance pool has insufficient funds (%lu AHT) for excess (%lu AHT). Flagged for manual review.\n", reins_balance, excess);
+            reins_status = STATUS_SUSPICIOUS; // Flag for manual review
+        }
+
+        // 3. Reinsurance Transaction
         snprintf(reins_tx.transaction_id, 64, "TX_SETTLE_REINS_%ld", time(NULL) + 1);
         strcpy(reins_tx.sender_address, reins_addr);
         strcpy(reins_tx.receiver_address, provider_addr);
@@ -191,9 +202,58 @@ bool settle_claim(const char *claim_tx_id, const char *provider_addr, uint64_t a
         reins_tx.timestamp = time(NULL) + 1;
         reins_tx.sender_nonce = get_or_create_account(reins_addr)->nonce;
         sign_transaction(&reins_tx, reins_priv);
-        add_to_mempool(&reins_tx, 20, STATUS_PENDING);
+        add_to_mempool(&reins_tx, 20, reins_status); // Uses dynamically determined status
         
         printf("Settlement split: 1000 AHT from Primary, %lu AHT from Reinsurance.\n", excess);
         return true;
     }
+}
+
+// --- Administrative Transaction Wrappers ---
+
+bool submit_service_request(const char *member_addr, const char *provider_addr, EC_KEY *priv_key) {
+    Transaction tx; memset(&tx, 0, sizeof(Transaction));
+    snprintf(tx.transaction_id, 64, "TX_SRV_%ld", time(NULL));
+    strcpy(tx.sender_address, member_addr);
+    strcpy(tx.receiver_address, provider_addr);
+    tx.amount = 0; // Service requests do not transfer tokens inherently
+    tx.transaction_type = TX_SERVICE_REQUEST;
+    tx.timestamp = time(NULL);
+    tx.sender_nonce = get_or_create_account(member_addr)->nonce;
+    
+    if (!validate_account_nonce(member_addr, tx.sender_nonce)) return false;
+    if (!sign_transaction(&tx, priv_key)) return false;
+    return add_to_mempool(&tx, 5, STATUS_PENDING);
+}
+
+bool submit_preauth_request(const char *provider_addr, const char *member_addr, uint64_t est_amount, EC_KEY *priv_key) {
+    Transaction tx; memset(&tx, 0, sizeof(Transaction));
+    snprintf(tx.transaction_id, 64, "TX_PREAUTH_%ld", time(NULL));
+    strcpy(tx.sender_address, provider_addr);
+    strcpy(tx.receiver_address, member_addr);
+    tx.amount = est_amount; // Estimated cost for authorization
+    tx.transaction_type = TX_PREAUTH_REQUEST;
+    tx.timestamp = time(NULL);
+    tx.sender_nonce = get_or_create_account(provider_addr)->nonce;
+    
+    if (!validate_account_nonce(provider_addr, tx.sender_nonce)) return false;
+    if (!sign_transaction(&tx, priv_key)) return false;
+    return add_to_mempool(&tx, 10, STATUS_PENDING);
+}
+
+bool process_claim_decision(const char *ins_addr, const char *provider_addr, const char *claim_tx_id, bool is_approved, EC_KEY *priv_key) {
+    Transaction tx; memset(&tx, 0, sizeof(Transaction));
+    snprintf(tx.transaction_id, 64, "TX_DECISION_%ld", time(NULL));
+    strcpy(tx.sender_address, ins_addr);
+    strcpy(tx.receiver_address, provider_addr);
+    tx.amount = 0; 
+    tx.transaction_type = is_approved ? TX_CLAIM_APPROVE : TX_CLAIM_REJECT;
+    tx.timestamp = time(NULL);
+    tx.sender_nonce = get_or_create_account(ins_addr)->nonce;
+    
+    if (!validate_account_nonce(ins_addr, tx.sender_nonce)) return false;
+    if (!sign_transaction(&tx, priv_key)) return false;
+    
+    printf("Claim %s decision recorded as: %s\n", claim_tx_id, is_approved ? "APPROVED" : "REJECTED");
+    return add_to_mempool(&tx, 15, STATUS_PENDING);
 }

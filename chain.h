@@ -8,6 +8,7 @@
 
 extern Block blockchain[MAX_BLOCKS];
 extern ChainState chain_state;
+extern Token aht_token;
 
 void chain_init();
 void compute_merkle_root(Transaction *txs, uint32_t count, unsigned char *root_out);
