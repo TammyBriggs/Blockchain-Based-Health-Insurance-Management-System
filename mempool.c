@@ -40,6 +40,11 @@ bool add_to_mempool(const Transaction *tx, uint64_t fee, MempoolStatus status) {
     entry->timestamp = tx->timestamp;
     entry->status = status;
 
+    // FIX: Copy the cryptographic fields into the mempool
+    entry->sender_nonce = tx->sender_nonce;
+    memcpy(entry->digital_signature, tx->digital_signature, tx->signature_length);
+    entry->signature_length = tx->signature_length;
+
     // Sort immediately after adding to maintain priority queue
     qsort(mempool, mempool_count, sizeof(MempoolEntry), compare_mempool_entries);
     return true;
@@ -114,6 +119,12 @@ uint32_t get_pending_transactions(Transaction *out_txs, uint32_t max_count) {
             out_txs[count].amount = mempool[i].amount;
             out_txs[count].transaction_type = mempool[i].transaction_type;
             out_txs[count].timestamp = mempool[i].timestamp;
+            
+            // FIX: Recover the cryptographic fields from the mempool to the block
+            out_txs[count].sender_nonce = mempool[i].sender_nonce;
+            memcpy(out_txs[count].digital_signature, mempool[i].digital_signature, mempool[i].signature_length);
+            out_txs[count].signature_length = mempool[i].signature_length;
+            
             count++;
         }
     }

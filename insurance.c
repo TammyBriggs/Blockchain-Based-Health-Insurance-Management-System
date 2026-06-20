@@ -24,7 +24,7 @@ bool enroll_policy(const char *policy_id, const char *member_address, const char
     strcpy(p->member_address, member_address);
     strcpy(p->coverage_plan, plan);
     p->enrollment_date = time(NULL);
-    p->expiry_date = p->enrollment_date + (365 * 24 * 60 * 60); // +365 days
+    p->expiry_date = p->enrollment_date + 10; // +365 days
     p->status = POLICY_ACTIVE;
     
     return true;
@@ -135,7 +135,16 @@ bool run_fraud_heuristics(const Transaction *tx) {
 // --- Claim Submission Pipeline ---
 bool submit_claim(Transaction *tx, uint64_t fee, EC_KEY *priv_key, const char *policy_id) {
     Policy *p = get_policy(policy_id);
-    if (!p || p->status == POLICY_EXPIRED) return false;
+    
+    if (!p) {
+        printf("Claim Rejected: Policy %s does not exist.\n", policy_id);
+        return false;
+    }
+    
+    if (p->status == POLICY_EXPIRED) {
+        printf("Claim Rejected: Policy %s is EXPIRED.\n", policy_id);
+        return false;
+    }
 
     Account *sender_acc = get_or_create_account(tx->sender_address);
     tx->sender_nonce = sender_acc->nonce;

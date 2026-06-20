@@ -62,6 +62,11 @@ typedef struct {
     uint64_t fee; // Priority value
     time_t timestamp; // Needed for secondary sorting
     MempoolStatus status;
+    
+    // CRITICAL FIX: Retain cryptographic proof for block verification
+    uint64_t sender_nonce; 
+    unsigned char digital_signature[SIGNATURE_MAX_SIZE]; 
+    size_t signature_length;
 } MempoolEntry;
 
 // Block Structure
