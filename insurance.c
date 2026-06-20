@@ -24,7 +24,7 @@ bool enroll_policy(const char *policy_id, const char *member_address, const char
     strcpy(p->member_address, member_address);
     strcpy(p->coverage_plan, plan);
     p->enrollment_date = time(NULL);
-    p->expiry_date = p->enrollment_date + 10; // +365 days
+    p->expiry_date = p->enrollment_date + (365 * 24 * 60 * 60); // +365 days
     p->status = POLICY_ACTIVE;
     
     return true;
