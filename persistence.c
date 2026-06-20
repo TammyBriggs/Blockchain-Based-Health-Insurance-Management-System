@@ -14,6 +14,7 @@ extern UTXO utxos[];
 extern uint32_t utxo_count;
 extern Policy policies[];
 extern uint32_t policy_count;
+extern Token aht_token;
 
 bool save_chain() {
     FILE *file = fopen(DATA_FILE, "wb");
@@ -24,6 +25,7 @@ bool save_chain() {
 
     // Write all states to binary file
     fwrite(&chain_state, sizeof(ChainState), 1, file);
+    fwrite(&aht_token, sizeof(Token), 1, file); // Save the initialized Token
     fwrite(&blockchain, sizeof(Block), chain_state.total_blocks, file);
     
     fwrite(&account_count, sizeof(uint32_t), 1, file);
@@ -55,6 +57,7 @@ bool load_chain() {
     }
 
     fread(&chain_state, sizeof(ChainState), 1, file);
+    fread(&aht_token, sizeof(Token), 1, file); // Load the Token
     fread(&blockchain, sizeof(Block), chain_state.total_blocks, file);
     
     fread(&account_count, sizeof(uint32_t), 1, file);

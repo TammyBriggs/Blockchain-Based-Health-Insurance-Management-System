@@ -9,6 +9,7 @@
 
 Block blockchain[MAX_BLOCKS];
 ChainState chain_state;
+Token aht_token; // Global instantiation of the Token structure
 
 void chain_init() {
     memset(blockchain, 0, sizeof(blockchain));
@@ -16,6 +17,11 @@ void chain_init() {
     chain_state.block_reward = 50;      // 50 AHT
     chain_state.total_blocks = 0;
     chain_state.last_retarget_block = 0;
+
+    // Initialize the ALU Health Token (AHT)
+    strcpy(aht_token.token_name, "ALU Health Token");
+    strcpy(aht_token.token_symbol, "AHT");
+    aht_token.total_supply = 1000000000; // 1 Billion Max Supply
 }
 
 // Custom Merkle Tree implementation (No external libraries)
