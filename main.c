@@ -31,10 +31,10 @@ void print_menu() {
     printf("\n[Membership Operations]\n  1. wallet_balance\n");
     printf("\n[Policy Operations]\n  2. enroll_policy <plan>\n  3. renew_policy <id>\n");
     printf("\n[Token Operations]\n  4. token_transfer <receiver> <amount>\n");
-    printf("\n[Insurance Operations]\n  5. pay_premium <amount> <fee>\n  6. submit_claim <provider> <amount> <pol_id>\n  7. settle_claim <claim_tx_id> <provider_addr> <amount>\n");
-    printf("\n[Blockchain Operations]\n  8. mempool_view\n  9. mine_solo\n  10. mine_pool\n  11. blockchain_view\n  12. blockchain_verify\n  13. chain_save\n");
-    printf("\n[UTXO Operations]\n  14. utxo_view\n");
-    printf("\n[Fraud and Audit Operations]\n  15. fraud_review\n  16. approve_suspicious <tx_id>\n  17. reject_suspicious <tx_id>\n  18. transaction_history\n  19. provider_history <addr>\n  20. premium_history\n  21. claim_history\n");
+    printf("\n[Insurance Operations]\n  5. pay_premium <amount> <fee>\n  6. service_request <provider_addr>\n  7. preauth_request <member_addr> <est_amount>\n  8. submit_claim <provider_addr> <amount> <pol_id>\n  9. approve_claim <claim_tx_id> <provider_addr>\n  10. reject_claim <claim_tx_id> <provider_addr>\n  11. settle_claim <claim_tx_id> <provider_addr> <amount>\n  12. reinsurance_balance\n");
+    printf("\n[Blockchain Operations]\n  13. mempool_view\n  14. mine_solo\n  15. mine_pool\n  16. blockchain_view\n  17. blockchain_verify\n  18. chain_save\n");
+    printf("\n[UTXO Operations]\n  19. utxo_view\n");
+    printf("\n[Fraud and Audit Operations]\n  20. fraud_review\n  21. approve_suspicious <tx_id>\n  22. reject_suspicious <tx_id>\n  23. transaction_history\n  24. provider_history <addr>\n  25. premium_history\n  26. claim_history\n");
     printf("\n  0. exit\n=======================================\n");
 }
 
@@ -50,6 +50,7 @@ int main() {
     insurance_wallet = generate_wallet_keypair(); get_wallet_address(insurance_wallet, ins_addr);
     reinsurance_wallet = generate_wallet_keypair(); get_wallet_address(reinsurance_wallet, reins_addr);
     
+    // Initial funding
     update_account_balance(session_addr, 10000, true);
     update_account_balance(ins_addr, 50000, true);
     update_account_balance(reins_addr, 50000, true);
@@ -72,7 +73,7 @@ int main() {
         if (argc == 0) continue; 
         char *cmd = args[0];
 
-        // --- Core Commands ---
+        // --- System Commands ---
         if (strcmp(cmd, "0") == 0 || strcmp(cmd, "exit") == 0) {
             save_chain(); break;
         }
@@ -82,10 +83,12 @@ int main() {
             printf("Balance: %lu AHT | Nonce: %lu\n", acc->balance, acc->nonce);
         }
         else if (strcmp(cmd, "2") == 0 || strcmp(cmd, "enroll_policy") == 0) {
+            if (argc < 2) { printf("Usage: 2 <plan>\n"); continue; }
             char pol_id[32]; snprintf(pol_id, 32, "POL_%ld", time(NULL));
             if (enroll_policy(pol_id, session_addr, args[1])) printf("Enrolled %s in %s.\n", pol_id, args[1]);
         }
         else if (strcmp(cmd, "3") == 0 || strcmp(cmd, "renew_policy") == 0) {
+            if (argc < 2) { printf("Usage: 3 <pol_id>\n"); continue; }
             if (renew_policy(args[1])) printf("Policy renewed.\n");
         }
         else if (strcmp(cmd, "4") == 0 || strcmp(cmd, "token_transfer") == 0) {
@@ -99,18 +102,34 @@ int main() {
             tx.timestamp = time(NULL);
             tx.sender_nonce = get_or_create_account(session_addr)->nonce;
             
-            if (sign_transaction(&tx, session_wallet)) {
+            if (validate_account_nonce(session_addr, tx.sender_nonce) && sign_transaction(&tx, session_wallet)) {
                 add_to_mempool(&tx, 15, STATUS_PENDING);
                 printf("Transfer signed and queued in mempool.\n");
             }
         }
+        
+        // --- Insurance Operations ---
         else if (strcmp(cmd, "5") == 0 || strcmp(cmd, "pay_premium") == 0) {
+            if (argc < 3) { printf("Usage: 5 <amount> <fee>\n"); continue; }
             if (submit_premium_payment(session_addr, ins_addr, reins_addr, strtoull(args[1], NULL, 10), strtoull(args[2], NULL, 10), session_wallet)) {
                 printf("Premium submitted.\n");
             }
         }
-        else if (strcmp(cmd, "6") == 0 || strcmp(cmd, "submit_claim") == 0) {
-            if (argc < 4) { printf("Usage: 6 <provider_addr> <amount> <pol_id>\n"); continue; }
+        else if (strcmp(cmd, "6") == 0 || strcmp(cmd, "service_request") == 0) {
+            if (argc < 2) { printf("Usage: 6 <provider_addr>\n"); continue; }
+            if (submit_service_request(session_addr, args[1], session_wallet)) {
+                printf("Service request queued.\n");
+            }
+        }
+        else if (strcmp(cmd, "7") == 0 || strcmp(cmd, "preauth_request") == 0) {
+            if (argc < 3) { printf("Usage: 7 <member_addr> <est_amount>\n"); continue; }
+            // Simulating provider submitting pre-auth for a member using session wallet as provider
+            if (submit_preauth_request(session_addr, args[1], strtoull(args[2], NULL, 10), session_wallet)) {
+                printf("Pre-auth request queued.\n");
+            }
+        }
+        else if (strcmp(cmd, "8") == 0 || strcmp(cmd, "submit_claim") == 0) {
+            if (argc < 4) { printf("Usage: 8 <provider_addr> <amount> <pol_id>\n"); continue; }
             Transaction tx; memset(&tx, 0, sizeof(Transaction));
             snprintf(tx.transaction_id, 64, "TX_CLM_%ld", time(NULL));
             strcpy(tx.sender_address, session_addr);
@@ -120,31 +139,51 @@ int main() {
             tx.timestamp = time(NULL);
             if (submit_claim(&tx, 10, session_wallet, args[3])) printf("Claim queued.\n");
         }
-        else if (strcmp(cmd, "7") == 0 || strcmp(cmd, "settle_claim") == 0) {
-            if (argc < 4) { printf("Usage: 7 <claim_tx_id> <provider_addr> <amount>\n"); continue; }
+        else if (strcmp(cmd, "9") == 0 || strcmp(cmd, "approve_claim") == 0) {
+            if (argc < 3) { printf("Usage: 9 <claim_tx_id> <provider_addr>\n"); continue; }
+            if (process_claim_decision(ins_addr, args[2], args[1], true, insurance_wallet)) {
+                printf("Claim approval queued.\n");
+            }
+        }
+        else if (strcmp(cmd, "10") == 0 || strcmp(cmd, "reject_claim") == 0) {
+            if (argc < 3) { printf("Usage: 10 <claim_tx_id> <provider_addr>\n"); continue; }
+            if (process_claim_decision(ins_addr, args[2], args[1], false, insurance_wallet)) {
+                printf("Claim rejection queued.\n");
+            }
+        }
+        else if (strcmp(cmd, "11") == 0 || strcmp(cmd, "settle_claim") == 0) {
+            if (argc < 4) { printf("Usage: 11 <claim_tx_id> <provider_addr> <amount>\n"); continue; }
             if (settle_claim(args[1], args[2], strtoull(args[3], NULL, 10), insurance_wallet, reinsurance_wallet, ins_addr, reins_addr)) {
                 printf("Settlement processed to mempool.\n");
             }
         }
-        else if (strcmp(cmd, "8") == 0 || strcmp(cmd, "mempool_view") == 0) view_mempool();
-        else if (strcmp(cmd, "9") == 0 || strcmp(cmd, "mine_solo") == 0) {
+        else if (strcmp(cmd, "12") == 0 || strcmp(cmd, "reinsurance_balance") == 0) {
+            Account *reins = get_or_create_account(reins_addr);
+            printf("Reinsurance Pool Balance: %lu AHT\n", reins->balance);
+        }
+        
+        // --- Blockchain Operations ---
+        else if (strcmp(cmd, "13") == 0 || strcmp(cmd, "mempool_view") == 0) view_mempool();
+        else if (strcmp(cmd, "14") == 0 || strcmp(cmd, "mine_solo") == 0) {
             if (mine_solo(session_addr)) { printf("Block mined!\n"); save_chain(); }
         }
-        else if (strcmp(cmd, "10") == 0 || strcmp(cmd, "mine_pool") == 0) {
+        else if (strcmp(cmd, "15") == 0 || strcmp(cmd, "mine_pool") == 0) {
             const char *miners[] = {session_addr, ins_addr};
             uint32_t hashes[] = {7000, 3000};
             if (mine_pool(miners, hashes, 2)) {
                 printf("Pool block mined! Rewards split 70/30.\n"); save_chain();
             }
         }
-        else if (strcmp(cmd, "11") == 0 || strcmp(cmd, "blockchain_view") == 0) {
-            printf("\nBlocks: %u | Difficulty: %u | Reward: %lu\n", chain_state.total_blocks, chain_state.current_difficulty, chain_state.block_reward);
+        else if (strcmp(cmd, "16") == 0 || strcmp(cmd, "blockchain_view") == 0) {
+            printf("\nBlocks: %u | Difficulty: %u | Reward: %lu AHT\n", chain_state.total_blocks, chain_state.current_difficulty, chain_state.block_reward);
         }
-        else if (strcmp(cmd, "12") == 0 || strcmp(cmd, "blockchain_verify") == 0) {
+        else if (strcmp(cmd, "17") == 0 || strcmp(cmd, "blockchain_verify") == 0) {
             if (verify_chain()) printf("[SUCCESS] Chain intact.\n");
         }
-        else if (strcmp(cmd, "13") == 0 || strcmp(cmd, "chain_save") == 0) save_chain();
-        else if (strcmp(cmd, "14") == 0 || strcmp(cmd, "utxo_view") == 0) {
+        else if (strcmp(cmd, "18") == 0 || strcmp(cmd, "chain_save") == 0) save_chain();
+        
+        // --- UTXO Operations ---
+        else if (strcmp(cmd, "19") == 0 || strcmp(cmd, "utxo_view") == 0) {
             printf("\n--- UTXO Set ---\n");
             int found = 0;
             for (uint32_t i = 0; i < utxo_count; i++) {
@@ -157,23 +196,28 @@ int main() {
         }
         
         // --- Audit & Fraud Commands ---
-        else if (strcmp(cmd, "15") == 0 || strcmp(cmd, "fraud_review") == 0) {
+        else if (strcmp(cmd, "20") == 0 || strcmp(cmd, "fraud_review") == 0) {
             printf("\n--- Suspicious Transactions Pending Review ---\n");
+            int found = 0;
             for (uint32_t i = 0; i < mempool_count; i++) {
-                if (mempool[i].status == STATUS_SUSPICIOUS) printf("Suspicious: %s\n", mempool[i].transaction_id);
+                if (mempool[i].status == STATUS_SUSPICIOUS) {
+                    printf("Suspicious: %s\n", mempool[i].transaction_id);
+                    found++;
+                }
             }
+            if (found == 0) printf("No suspicious transactions flagged.\n");
         }
-        else if (strcmp(cmd, "16") == 0 || strcmp(cmd, "approve_suspicious") == 0) {
-            if (argc < 2) { printf("Usage: 16 <tx_id>\n"); continue; }
+        else if (strcmp(cmd, "21") == 0 || strcmp(cmd, "approve_suspicious") == 0) {
+            if (argc < 2) { printf("Usage: 21 <tx_id>\n"); continue; }
             for (uint32_t i = 0; i < mempool_count; i++) {
                 if (strcmp(mempool[i].transaction_id, args[1]) == 0) mempool[i].status = STATUS_PENDING;
             }
         }
-        else if (strcmp(cmd, "17") == 0 || strcmp(cmd, "reject_suspicious") == 0) {
-            if (argc < 2) { printf("Usage: 17 <tx_id>\n"); continue; }
+        else if (strcmp(cmd, "22") == 0 || strcmp(cmd, "reject_suspicious") == 0) {
+            if (argc < 2) { printf("Usage: 22 <tx_id>\n"); continue; }
             Transaction mock; strcpy(mock.transaction_id, args[1]); remove_confirmed_transactions(&mock, 1);
         }
-        else if (strcmp(cmd, "18") == 0 || strcmp(cmd, "transaction_history") == 0) {
+        else if (strcmp(cmd, "23") == 0 || strcmp(cmd, "transaction_history") == 0) {
             printf("\n--- Full On-Chain History ---\n");
             for (uint32_t i = 0; i < chain_state.total_blocks; i++) {
                 for (uint32_t j = 0; j < blockchain[i].transaction_count; j++) {
@@ -181,8 +225,8 @@ int main() {
                 }
             }
         }
-        else if (strcmp(cmd, "19") == 0 || strcmp(cmd, "provider_history") == 0) {
-            if (argc < 2) { printf("Usage: 19 <provider_addr>\n"); continue; }
+        else if (strcmp(cmd, "24") == 0 || strcmp(cmd, "provider_history") == 0) {
+            if (argc < 2) { printf("Usage: 24 <provider_addr>\n"); continue; }
             printf("\n--- Provider History: %s ---\n", args[1]);
             for (uint32_t i = 0; i < chain_state.total_blocks; i++) {
                 for (uint32_t j = 0; j < blockchain[i].transaction_count; j++) {
@@ -193,7 +237,7 @@ int main() {
                 }
             }
         }
-        else if (strcmp(cmd, "20") == 0 || strcmp(cmd, "premium_history") == 0) {
+        else if (strcmp(cmd, "25") == 0 || strcmp(cmd, "premium_history") == 0) {
             printf("\n--- Premium Payment History ---\n");
             for (uint32_t i = 0; i < chain_state.total_blocks; i++) {
                 for (uint32_t j = 0; j < blockchain[i].transaction_count; j++) {
@@ -203,7 +247,7 @@ int main() {
                 }
             }
         }
-        else if (strcmp(cmd, "21") == 0 || strcmp(cmd, "claim_history") == 0) {
+        else if (strcmp(cmd, "26") == 0 || strcmp(cmd, "claim_history") == 0) {
             printf("\n--- Claim Submission History ---\n");
             for (uint32_t i = 0; i < chain_state.total_blocks; i++) {
                 for (uint32_t j = 0; j < blockchain[i].transaction_count; j++) {
@@ -213,7 +257,11 @@ int main() {
                 }
             }
         }
+        else {
+            printf("Invalid command.\n");
+        }
     }
+
     EC_KEY_free(session_wallet);
     EC_KEY_free(insurance_wallet);
     EC_KEY_free(reinsurance_wallet);
